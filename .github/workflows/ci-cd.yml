@@ -433,7 +433,7 @@ jobs:
     name: "🚀 Update GitOps Manifests"
     runs-on: ubuntu-latest
 
-    needs: [docker-push, version, change-detection]
+    needs: [docker-push, helm-validation, version, change-detection]
     
     if: |
       !cancelled() &&
@@ -451,8 +451,8 @@ jobs:
         needs.helm-validation.result == 'success' ||
         needs.helm-validation.result == 'skipped'
       )
-        permissions:
-          contents: write
+    permissions:
+      contents: write
 
     steps:
 
