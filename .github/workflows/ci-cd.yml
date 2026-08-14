@@ -87,8 +87,7 @@ jobs:
     needs: version
 
     outputs:
-      frontend: ${{ steps.filter.outputs.frontend }}
-      backend: ${{ steps.filter.outputs.backend }}
+      components: ${{ steps.components.outputs.components }}
       helm: ${{ steps.filter.outputs.helm }}
 
     steps:
@@ -110,7 +109,23 @@ jobs:
               - 'helm/**'
               - 'k8s/**'
 
+      - name: Build component matrix
+        id: components
+        shell: bash
+        run: |
+          COMPONENTS="[]"
 
+          if [[ "${{ steps.filter.outputs.backend }}" == "true" ]]; then
+            COMPONENTS=$(echo "$COMPONENTS" | jq -c '. + ["backend"]')
+          fi
+
+          if [[ "${{ steps.filter.outputs.frontend }}" == "true" ]]; then
+            COMPONENTS=$(echo "$COMPONENTS" | jq -c '. + ["frontend"]')
+          fi
+
+          echo "Changed components: $COMPONENTS"
+          echo "components=$COMPONENTS" >> "$GITHUB_OUTPUT"
+  
 
 # ==============================================================
 #  LINTING
@@ -125,15 +140,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        component: [backend, frontend]
-
-    if: |
-      (matrix.component == 'backend' &&
-      needs.change-detection.outputs.backend == 'true')
-      ||
-      (matrix.component == 'frontend' &&
-      needs.change-detection.outputs.frontend == 'true')
-
+        component: ${{ fromJSON(needs.change-detection.outputs.components) }}
+     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -164,15 +172,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        component: [backend, frontend]
+        component: ${{ fromJSON(needs.change-detection.outputs.components) }}
 
-    if: |
-      (matrix.component == 'backend' &&
-      needs.change-detection.outputs.backend == 'true')
-      ||
-      (matrix.component == 'frontend' &&
-      needs.change-detection.outputs.frontend == 'true')
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -209,23 +210,13 @@ jobs:
 
     needs: [sca, change-detection, version]
      
-
     strategy:
       fail-fast: false
-
       matrix:
-        component: [backend, frontend]
-
-    if: |
-      (matrix.component == 'backend' &&
-       needs.change-detection.outputs.backend == 'true')
-      ||
-      (matrix.component == 'frontend' &&
-       needs.change-detection.outputs.frontend == 'true')
-     
+        component: ${{ fromJSON(needs.change-detection.outputs.components) }}
+ 
 
     steps:
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -283,22 +274,14 @@ jobs:
       fail-fast: false
 
       matrix:
-        component: [backend, frontend] 
+        component: ${{ fromJSON(needs.change-detection.outputs.components) }} 
         
-
-    if: |
-      (matrix.component == 'backend' &&
-       needs.change-detection.outputs.backend == 'true')
-      ||
-      (matrix.component == 'frontend' &&
-       needs.change-detection.outputs.frontend == 'true')
       
     permissions:
       contents: read
       security-events: write
 
     steps:
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -355,22 +338,9 @@ jobs:
       fail-fast: false
 
       matrix:
-        component: [backend, frontend]
+        component: ${{ fromJSON(needs.change-detection.outputs.components) }}
           
-
-    if: |
-      github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'deploy'
-      &&
-      (
-        (matrix.component == 'backend' &&
-         needs.change-detection.outputs.backend == 'true')
-        ||
-        (matrix.component == 'frontend' &&
-         needs.change-detection.outputs.frontend == 'true')
-      )
-
     steps:
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -416,7 +386,7 @@ jobs:
 
     needs: [change-detection, version]
 
-    if: needs.change-detection.outputs.helm == 'true'
+    if: ${{ needs.change-detection.outputs.helm == 'true' }}
 
     steps:
 
@@ -445,7 +415,12 @@ jobs:
     name: "🚀 Update GitOps Manifests"
     runs-on: ubuntu-latest
 
-    needs: [docker-push, version, change-detection] 
+    needs: [docker-push, version, change-detection]
+    
+     if: |
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.action == 'deploy' &&
+      needs.change-detection.outputs.components != '[]'
 
     permissions:
       contents: write
@@ -454,20 +429,28 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@v4
-        
+        with:
+          ref: staging
+
       - name: Setup yq
         uses: mikefarah/yq@v4.44.3
 
       - name: Update Helm values
+        shell: bash
         run: |
           IMAGE_TAG="${{ needs.version.outputs.IMAGE_TAG }}"
-          echo "Updating image version to: $IMAGE_TAG"
+          COMPONENTS='${{ needs.change-detection.outputs.components }}'
 
-          if [[ "${{ needs.change-detection.outputs.frontend }}" == "true" ]]; then
+          echo "Image tag: $IMAGE_TAG"
+          echo "Changed components: $COMPONENTS"
+
+          if echo "$COMPONENTS" | jq -e 'index("frontend")' > /dev/null; then
+            echo "Updating frontend image tag..."
             yq eval -i ".frontend.tag = \"$IMAGE_TAG\"" helm/jerney/values.yaml
           fi
 
-          if [[ "${{ needs.change-detection.outputs.backend }}" == "true" ]]; then
+          if echo "$COMPONENTS" | jq -e 'index("backend")' > /dev/null; then
+            echo "Updating backend image tag..."
             yq eval -i ".backend.tag = \"$IMAGE_TAG\"" helm/jerney/values.yaml
           fi
 
@@ -476,6 +459,7 @@ jobs:
           git diff -- helm/jerney/values.yaml
 
       - name: Commit and push changes
+        shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -488,10 +472,6 @@ jobs:
           fi
 
           git commit -m "deploy: ${{ needs.version.outputs.IMAGE_TAG }}"
-
           git push origin staging
-
-
-
 
 
