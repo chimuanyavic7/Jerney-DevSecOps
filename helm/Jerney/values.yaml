@@ -32,7 +32,7 @@ backend:
 #########################
 
 
-backend:
+frontend:
   namespace: jerney-frontend
   app_name: jerney-frontend
   app_part: jerney

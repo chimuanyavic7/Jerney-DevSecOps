@@ -420,8 +420,9 @@ jobs:
 
       - name: Helm template test
         run: |
-          helm template helm/jerney \
-            --set image.tag=${{ needs.version.outputs.IMAGE_TAG }}
+          helm template jerney helm/jerney \
+            --set backend.image_tag=${{ needs.version.outputs.IMAGE_TAG }} \
+            --set frontend.image_tag=${{ needs.version.outputs.IMAGE_TAG }}    
 
 
 # ============================================================
@@ -463,7 +464,7 @@ jobs:
 
       - name: Setup yq
         uses: mikefarah/yq@v4.44.3
-
+      
       - name: Update Helm values
         shell: bash
         run: |
@@ -475,14 +476,15 @@ jobs:
 
           if echo "$COMPONENTS" | jq -e 'index("frontend")' > /dev/null; then
             echo "Updating frontend image tag..."
-            yq eval -i ".frontend.tag = \"$IMAGE_TAG\"" helm/jerney/values.yaml
+            yq eval -i ".frontend.image_tag = \"$IMAGE_TAG\"" helm/jerney/values.yaml
           fi
 
           if echo "$COMPONENTS" | jq -e 'index("backend")' > /dev/null; then
             echo "Updating backend image tag..."
-            yq eval -i ".backend.tag = \"$IMAGE_TAG\"" helm/jerney/values.yaml
+            yq eval -i ".backend.image_tag = \"$IMAGE_TAG\"" helm/jerney/values.yaml
           fi
-
+            
+      
       - name: Show changes
         run: |
           git diff -- helm/jerney/values.yaml
