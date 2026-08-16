@@ -476,12 +476,12 @@ jobs:
 
           if echo "$COMPONENTS" | jq -e 'index("frontend")' > /dev/null; then
             echo "Updating frontend image tag..."
-            yq eval -i ".frontend.image_tag = \"$IMAGE_TAG\"" helm/jerney/values.yaml
+            yq eval -i ".frontend.image_tag = \"$IMAGE_TAG\"" helm/Jerney/values.yaml
           fi
 
           if echo "$COMPONENTS" | jq -e 'index("backend")' > /dev/null; then
             echo "Updating backend image tag..."
-            yq eval -i ".backend.image_tag = \"$IMAGE_TAG\"" helm/jerney/values.yaml
+            yq eval -i ".backend.image_tag = \"$IMAGE_TAG\"" helm/Jerney/values.yaml
           fi
             
       
