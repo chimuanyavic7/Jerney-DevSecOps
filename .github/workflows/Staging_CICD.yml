@@ -416,11 +416,11 @@ jobs:
 
       - name: Helm lint
         run: |
-          helm lint helm/jerney
+          helm lint helm/Jerney
 
       - name: Helm template test
         run: |
-          helm template jerney helm/jerney \
+          helm template jerney helm/Jerney \
             --set backend.image_tag=${{ needs.version.outputs.IMAGE_TAG }} \
             --set frontend.image_tag=${{ needs.version.outputs.IMAGE_TAG }}    
 
