@@ -404,8 +404,6 @@ jobs:
 
     needs: [change-detection, version]
 
-    if: needs.change-detection.outputs.has-components == 'true' # frontend and backend
-
     if: ${{ needs.change-detection.outputs.helm == 'true' }} # helm
 
     steps:
