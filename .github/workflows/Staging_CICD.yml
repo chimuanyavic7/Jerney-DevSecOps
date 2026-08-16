@@ -253,8 +253,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-          provenance: true
-          sbom: true
+          provenance: false
+          sbom: false
 
   # --------------------------------------------------------
   # Save image for the next job
@@ -404,7 +404,9 @@ jobs:
 
     needs: [change-detection, version]
 
-    if: ${{ needs.change-detection.outputs.helm == 'true' }}
+    if: needs.change-detection.outputs.has-components == 'true' # frontend and backend
+
+    if: ${{ needs.change-detection.outputs.helm == 'true' }} # helm
 
     steps:
 
