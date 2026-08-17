@@ -90,7 +90,7 @@ jobs:
 
     outputs:
       components: ${{ steps.components.outputs.components }}
-      has-components: ${{ steps.components.outputs.has_components }}
+      has_components: ${{ steps.components.outputs.has_components }}
       helm: ${{ steps.filter.outputs.helm }}
 
     steps:
