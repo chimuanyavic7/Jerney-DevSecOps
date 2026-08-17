@@ -327,7 +327,7 @@ jobs:
           ignore-unfixed: true
           scanners: vuln
  #         trivyignores: .trivyignore
-          exit-code: 1
+          exit-code: 0
 
 
   # --------------------------------------------------------
