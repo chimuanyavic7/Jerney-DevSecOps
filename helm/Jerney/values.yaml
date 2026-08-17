@@ -17,39 +17,27 @@ backend:
   app_part: jerney
   app_component: backend
   replicaCount: 2
-  containerport: 5000 
+  containerport: 5000
   image_name:
-  image_tag :
-
+  image_tag: e9320aa
   type: ClusterIP
   service_port: 5000
   targetPort: 5000
-
-
-
 #########################
 #      frontend          #
 #########################
-
-
 frontend:
   namespace: jerney-frontend
   app_name: jerney-frontend
   app_part: jerney
   app_component: frontend
   replicaCount: 2
-  containerport: 8080 
+  containerport: 8080
   image_name:
-  image_tag :
-
+  image_tag: e9320aa
   type: ClusterIP
   service_port: 80
   targetPort: 8080
-
-
-
-
-
 resources:
   requests:
     cpu: "100m"
