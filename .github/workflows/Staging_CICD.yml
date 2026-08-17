@@ -436,10 +436,34 @@ jobs:
 
     needs: [docker-push, helm-validation, version, change-detection]
     
+#    if: |
+#      !cancelled() &&
+#      github.event_name == 'workflow_dispatch' &&
+#      inputs.action == 'deploy' &&
+#      (
+#        needs.change-detection.outputs.has_components == 'true' ||
+#        needs.change-detection.outputs.helm == 'true'
+#      ) &&
+#      (
+#        needs.docker-push.result == 'success' ||
+#        needs.docker-push.result == 'skipped'
+#      ) &&
+#      (
+#        needs.helm-validation.result == 'success' ||
+#        needs.helm-validation.result == 'skipped'
+#      )
+
+
     if: |
       !cancelled() &&
-      github.event_name == 'workflow_dispatch' &&
-      inputs.action == 'deploy' &&
+      github.ref == 'refs/heads/staging' &&
+      (
+        github.event_name == 'push' ||
+        (
+          github.event_name == 'workflow_dispatch' &&
+          inputs.action == 'deploy'
+        )
+      ) &&
       (
         needs.change-detection.outputs.has_components == 'true' ||
         needs.change-detection.outputs.helm == 'true'
@@ -452,6 +476,8 @@ jobs:
         needs.helm-validation.result == 'success' ||
         needs.helm-validation.result == 'skipped'
       )
+
+
     permissions:
       contents: write
 
@@ -495,7 +521,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add helm/jerney/values.yaml
+          git add helm/Jerney/values.yaml
 
           if git diff --cached --quiet; then
             echo "No changes to commit"
