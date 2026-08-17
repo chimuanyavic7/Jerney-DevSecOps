@@ -26,7 +26,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: {{ .Values.frontend.app_name }}
-        app.kubernetes.io/part-of: {{ .Values.frontend.app_part }}
+        app.kubernetes.io/part-of: {{ .Values.namespace }}
         app.kubernetes.io/component: {{ .Values.frontend.app_component }}
     spec:
       automountServiceAccountToken: false
