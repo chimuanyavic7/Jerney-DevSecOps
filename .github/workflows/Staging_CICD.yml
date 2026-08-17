@@ -148,7 +148,7 @@ jobs:
 
     needs: [change-detection, gitleaks]
 
-    if: needs.change-detection.outputs.has-components == 'true'
+    if: needs.change-detection.outputs.has_components == 'true'
 
     strategy:
       fail-fast: false
@@ -182,7 +182,7 @@ jobs:
     name: "🛡️ Dependency Audit"
     runs-on: ubuntu-latest
     needs: [lint, change-detection]
-    if: needs.change-detection.outputs.has-components == 'true'
+    if: needs.change-detection.outputs.has_components == 'true'
 
     strategy:
       fail-fast: false
@@ -224,7 +224,7 @@ jobs:
     runs-on: ubuntu-latest
 
     needs: [sca, change-detection, version]
-    if: needs.change-detection.outputs.has-components == 'true'
+    if: needs.change-detection.outputs.has_components == 'true'
 
     strategy:
       fail-fast: false
@@ -285,7 +285,7 @@ jobs:
     runs-on: ubuntu-latest
 
     needs: [docker-build, change-detection, version]
-    if: needs.change-detection.outputs.has-components == 'true'
+    if: needs.change-detection.outputs.has_components == 'true'
 
     strategy:
       fail-fast: false
@@ -350,7 +350,7 @@ jobs:
     name: "📦 Push ${{ matrix.component }} to Docker Hub"
     runs-on: ubuntu-latest
     needs: [trivy, change-detection, version]
-    if: needs.change-detection.outputs.has-components == 'true'
+    if: needs.change-detection.outputs.has_components == 'true'
 
     strategy:
       fail-fast: false
