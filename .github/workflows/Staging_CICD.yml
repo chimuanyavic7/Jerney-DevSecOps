@@ -326,7 +326,7 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           scanners: vuln
-          trivyignores: .trivyignore
+ #         trivyignores: .trivyignore
           exit-code: 1
 
 
