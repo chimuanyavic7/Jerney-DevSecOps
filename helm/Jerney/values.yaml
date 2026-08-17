@@ -1,7 +1,14 @@
 #########################
 #      database         #
 #########################
+namespace: jerney
 
+config:
+  name: jerney-config
+  DB_HOST: ""
+  DB_PORT: "5432"
+  DB_NAME: ""
+  DB_USER: ""
 
 
 
@@ -12,7 +19,7 @@
 #########################
 
 backend:
-  namespace: jerney-backend
+  namespace: jerney
   app_name: jerney-backend
   app_part: jerney
   app_component: backend
@@ -30,7 +37,7 @@ backend:
 #      frontend          #
 #########################
 frontend:
-  namespace: jerney-frontend
+  namespace: jerney
   app_name: jerney-frontend
   app_part: jerney
   app_component: frontend
