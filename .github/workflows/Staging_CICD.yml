@@ -492,24 +492,47 @@ jobs:
         uses: mikefarah/yq@v4.44.3
       
       - name: Update Helm values
+        env:
+          IMAGE_TAG: ${{ needs.version.outputs.IMAGE_TAG }}
+          FRONTEND_CHANGED: ${{ needs.change-detection.outputs.frontend }}
+          BACKEND_CHANGED: ${{ needs.change-detection.outputs.backend }}
         shell: bash
         run: |
-          IMAGE_TAG="${{ needs.version.outputs.IMAGE_TAG }}"
-          COMPONENTS='${{ needs.change-detection.outputs.components }}'
+          set -e
 
           echo "Image tag: $IMAGE_TAG"
-          echo "Changed components: $COMPONENTS"
+          echo "Frontend changed: $FRONTEND_CHANGED"
+          echo "Backend changed: $BACKEND_CHANGED"
 
-          if echo "$COMPONENTS" | jq -e 'index("frontend")' > /dev/null; then
+          # Only update frontend if frontend actually changed
+          if [[ "$FRONTEND_CHANGED" == "true" ]]; then
             echo "Updating frontend image tag..."
-            yq eval -i ".frontend.image_tag = \"$IMAGE_TAG\"" helm/Jerney/values.yaml
+            yq eval -i \
+              ".frontend.image_tag = \"$IMAGE_TAG\"" \
+              helm/Jerney/values.yaml
+          else
+            echo "Frontend did not change - keeping existing frontend image tag"
           fi
 
-          if echo "$COMPONENTS" | jq -e 'index("backend")' > /dev/null; then
+          # Only update backend if backend actually changed
+          if [[ "$BACKEND_CHANGED" == "true" ]]; then
             echo "Updating backend image tag..."
-            yq eval -i ".backend.image_tag = \"$IMAGE_TAG\"" helm/Jerney/values.yaml
+            yq eval -i \
+              ".backend.image_tag = \"$IMAGE_TAG\"" \
+              helm/Jerney/values.yaml
+          else
+            echo "Backend did not change - keeping existing backend image tag"
           fi
-            
+
+          echo ""
+          echo "===== FINAL IMAGE TAGS ====="
+
+          echo "Backend:"
+          yq eval '.backend.image_tag' helm/Jerney/values.yaml
+
+          echo "Frontend:"
+          yq eval '.frontend.image_tag' helm/Jerney/values.yaml      
+      
       
       - name: Show changes
         run: |
