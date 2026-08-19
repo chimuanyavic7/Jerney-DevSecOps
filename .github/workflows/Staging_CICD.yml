@@ -426,35 +426,20 @@ jobs:
             --set backend.image_tag=${{ needs.version.outputs.IMAGE_TAG }} \
             --set frontend.image_tag=${{ needs.version.outputs.IMAGE_TAG }}    
 
-
 # ============================================================
 # GITOPS
-# Update Helm values with the image version
+# Update only the image tag(s) for changed components
 # ============================================================
 
   gitops:
     name: "🚀 Update GitOps Manifests"
     runs-on: ubuntu-latest
 
-    needs: [docker-push, helm-validation, version, change-detection]
-    
-#    if: |
-#      !cancelled() &&
-#      github.event_name == 'workflow_dispatch' &&
-#      inputs.action == 'deploy' &&
-#      (
-#        needs.change-detection.outputs.has_components == 'true' ||
-#        needs.change-detection.outputs.helm == 'true'
-#      ) &&
-#      (
-#        needs.docker-push.result == 'success' ||
-#        needs.docker-push.result == 'skipped'
-#      ) &&
-#      (
-#        needs.helm-validation.result == 'success' ||
-#        needs.helm-validation.result == 'skipped'
-#      )
-
+    needs:
+      - docker-push
+      - helm-validation
+      - version
+      - change-detection
 
     if: |
       !cancelled() &&
@@ -479,81 +464,110 @@ jobs:
         needs.helm-validation.result == 'skipped'
       )
 
-
     permissions:
       contents: write
 
     steps:
 
-      - name: Checkout repository
+      - name: Checkout staging
         uses: actions/checkout@v4
         with:
           ref: staging
+          fetch-depth: 0
 
       - name: Setup yq
         uses: mikefarah/yq@v4.44.3
-      
-      - name: Update Helm values
+
+      - name: Show current image tags
+        run: |
+          echo "===== CURRENT IMAGE TAGS ====="
+
+          echo "Backend:"
+          yq eval '.backend.image_tag' helm/Jerney/values.yaml
+
+          echo "Frontend:"
+          yq eval '.frontend.image_tag' helm/Jerney/values.yaml
+
+      - name: Update only changed component tags
         env:
           IMAGE_TAG: ${{ needs.version.outputs.IMAGE_TAG }}
           FRONTEND_CHANGED: ${{ needs.change-detection.outputs.frontend }}
           BACKEND_CHANGED: ${{ needs.change-detection.outputs.backend }}
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          echo "Image tag: $IMAGE_TAG"
+          echo "=========================================="
+          echo "GitOps Image Update"
+          echo "=========================================="
+
+          echo "New image tag: $IMAGE_TAG"
           echo "Frontend changed: $FRONTEND_CHANGED"
           echo "Backend changed: $BACKEND_CHANGED"
+          echo ""
 
-          # Only update frontend if frontend actually changed
+          # --------------------------------------------------
+          # FRONTEND
+          # --------------------------------------------------
+
           if [[ "$FRONTEND_CHANGED" == "true" ]]; then
-            echo "Updating frontend image tag..."
+            echo "Updating FRONTEND image tag -> $IMAGE_TAG"
+
             yq eval -i \
               ".frontend.image_tag = \"$IMAGE_TAG\"" \
               helm/Jerney/values.yaml
           else
-            echo "Frontend did not change - keeping existing frontend image tag"
+            echo "Frontend did NOT change."
+            echo "Keeping existing frontend image tag."
           fi
 
-          # Only update backend if backend actually changed
+          # --------------------------------------------------
+          # BACKEND
+          # --------------------------------------------------
+
           if [[ "$BACKEND_CHANGED" == "true" ]]; then
-            echo "Updating backend image tag..."
+            echo "Updating BACKEND image tag -> $IMAGE_TAG"
+
             yq eval -i \
               ".backend.image_tag = \"$IMAGE_TAG\"" \
               helm/Jerney/values.yaml
           else
-            echo "Backend did not change - keeping existing backend image tag"
+            echo "Backend did NOT change."
+            echo "Keeping existing backend image tag."
           fi
 
           echo ""
-          echo "===== FINAL IMAGE TAGS ====="
+          echo "=========================================="
+          echo "FINAL IMAGE TAGS"
+          echo "=========================================="
 
           echo "Backend:"
           yq eval '.backend.image_tag' helm/Jerney/values.yaml
 
           echo "Frontend:"
-          yq eval '.frontend.image_tag' helm/Jerney/values.yaml      
-      
+          yq eval '.frontend.image_tag' helm/Jerney/values.yaml
 
-      - name: Show changes
+      - name: Show values.yaml diff
         run: |
+          echo "===== VALUES.YAML DIFF ====="
+
           git diff -- helm/Jerney/values.yaml
 
-      - name: Commit and push changes
+      - name: Commit and push GitOps change
         shell: bash
         run: |
+          set -euo pipefail
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add helm/Jerney/values.yaml
 
           if git diff --cached --quiet; then
-            echo "No changes to commit"
+            echo "No image tag changes detected."
+            echo "Nothing to commit."
             exit 0
           fi
 
-          git commit -m "deploy: ${{ needs.version.outputs.IMAGE_TAG }}"
+          git commit -m "deploy: update changed image(s) to ${{ needs.version.outputs.IMAGE_TAG }}"
           git push origin staging
-
-
