@@ -40,4 +40,3 @@ async function initDB() {
 }
 
 module.exports = { pool, initDB };
-// do
