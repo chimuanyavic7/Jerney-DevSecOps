@@ -92,6 +92,8 @@ jobs:
       components: ${{ steps.components.outputs.components }}
       has_components: ${{ steps.components.outputs.has_components }}
       helm: ${{ steps.filter.outputs.helm }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      backend: ${{ steps.filter.outputs.backend }}
 
     steps:
 
@@ -533,7 +535,7 @@ jobs:
           echo "Frontend:"
           yq eval '.frontend.image_tag' helm/Jerney/values.yaml      
       
-      
+
       - name: Show changes
         run: |
           git diff -- helm/Jerney/values.yaml
