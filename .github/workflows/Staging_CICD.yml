@@ -1,0 +1,573 @@
+# ==============================================================
+# Jerney - DevSecOps CI/CD Pipeline
+# ==============================================================
+# Triggers on every push and pull request.
+# Stages: Lint → SCA → Build → Image Scan → Deploy Manifest Update
+# ==============================================================
+
+name: Jerney DevSecOps Pipeline
+
+on:
+  push:
+    branches: [staging]
+  pull_request:
+    branches: ["*"]
+
+
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "What do you want to do?"
+        required: true
+        default: "scan-only"
+        type: choice
+        options:
+          - scan-only
+          - deploy        
+
+# Security: restrict default permissions to read-only
+permissions:
+  contents: read
+  
+  
+jobs:
+
+# ==================================================
+# SECURITY - GITLEAKS
+# ==================================================
+
+  gitleaks:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run GitLeaks
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
+# ============================================================
+# VERSION
+# Generates one immutable version for the entire pipeline
+# ============================================================
+
+  version:
+    name: "🏷️ Generate Image Version"
+    runs-on: ubuntu-latest
+    needs: gitleaks
+
+    outputs:
+      IMAGE_TAG: ${{ steps.version.outputs.image_tag }}
+
+    steps:
+      - name: Generate image tag
+        id: version
+        run: |
+          IMAGE_TAG="${GITHUB_SHA::7}"
+
+          echo "Image tag: $IMAGE_TAG"
+
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+
+
+# ==================================================
+# change-detection: it detect when a change is run in a path
+# ==================================================
+  
+
+  change-detection:
+    name: "🔎 Detect Changed Components"
+    runs-on: ubuntu-latest
+    needs: version
+
+    outputs:
+      components: ${{ steps.components.outputs.components }}
+      has_components: ${{ steps.components.outputs.has_components }}
+      helm: ${{ steps.filter.outputs.helm }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      backend: ${{ steps.filter.outputs.backend }}
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect changes
+        id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            frontend:
+              - 'frontend/**'
+
+            backend:
+              - 'backend/**'
+
+            helm:
+              - 'helm/**'
+              - 'k8s/**'
+
+      - name: Build component matrix
+        id: components
+        shell: bash
+        run: |
+
+          COMPONENTS="[]"
+
+          if [[ "${{ steps.filter.outputs.backend }}" == "true" ]]; then
+            COMPONENTS=$(echo "$COMPONENTS" | jq -c '. + ["backend"]')
+          fi
+
+          if [[ "${{ steps.filter.outputs.frontend }}" == "true" ]]; then
+            COMPONENTS=$(echo "$COMPONENTS" | jq -c '. + ["frontend"]')
+          fi
+
+          echo "Changed components: $COMPONENTS"
+
+          echo "components=$COMPONENTS" >> "$GITHUB_OUTPUT"
+
+          if [[ "$COMPONENTS" == "[]" ]]; then
+            echo "has_components=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_components=true" >> "$GITHUB_OUTPUT"
+          fi
+
+# ==============================================================
+#  LINTING
+# ==============================================================
+
+  lint:
+    name: "🔍 Lint ${{ matrix.component }}"
+    runs-on: ubuntu-latest
+
+    needs: [change-detection, gitleaks]
+
+    if: needs.change-detection.outputs.has_components == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        component: ${{ fromJSON(needs.change-detection.outputs.components) }}
+     
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: "${{ matrix.component }}/package-lock.json"
+
+      - name: Install dependencies
+        working-directory: ${{ matrix.component }}
+        run: npm ci
+
+      - name: Run ESLint
+        working-directory: ${{ matrix.component }}
+        run: npm run lint
+
+
+# ==============================================================
+#  Software Composition Analysis (SCA) — Dependency Audit
+# ==============================================================
+  sca:
+    name: "🛡️ Dependency Audit"
+    runs-on: ubuntu-latest
+    needs: [lint, change-detection]
+    if: needs.change-detection.outputs.has_components == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        component: ${{ fromJSON(needs.change-detection.outputs.components) }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: "${{ matrix.component }}/package-lock.json"
+
+      - name: Install dependencies
+        working-directory: ${{ matrix.component }}
+        run: npm ci
+
+      # npm audit for known vulnerabilities (fail on high/critical)
+      - name: npm audit
+        working-directory: ${{ matrix.component }}
+        run: npm audit --audit-level=high || true
+        # `|| true` to not fail on moderate — adjust in prod
+
+
+  
+  # ============================================================
+  # DOCKER BUILD
+  # IMPORTANT:
+  # Images are NOT pushed here.
+  # We only build the image locally.
+  # ============================================================
+
+  docker-build:
+    name: "🐳 Docker Build - ${{ matrix.component }}"
+    runs-on: ubuntu-latest
+
+    needs: [sca, change-detection, version]
+    if: needs.change-detection.outputs.has_components == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        component: ${{ fromJSON(needs.change-detection.outputs.components) }}
+ 
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.component }}
+          file: ./${{ matrix.component }}/Dockerfile
+
+          load: true
+
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/jerney-${{ matrix.component }}:${{ needs.version.outputs.IMAGE_TAG }}
+
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+          provenance: false
+          sbom: false
+
+  # --------------------------------------------------------
+  # Save image for the next job
+  # --------------------------------------------------------
+
+      - name: Save Docker image
+        run: |
+          docker save \
+            ${{ secrets.DOCKERHUB_USERNAME }}/jerney-${{ matrix.component }}:${{ needs.version.outputs.IMAGE_TAG }} \
+            -o ${{ matrix.component }}-image.tar
+
+      - name: Upload Docker image
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image-jerney_${{ matrix.component }}
+          path: ${{ matrix.component }}-image.tar
+          retention-days: 1
+
+
+  # ============================================================
+  #  TRIVY IMAGE SECURITY SCAN
+  #
+  # The image is scanned BEFORE Docker Hub push.
+  # ============================================================
+
+  trivy:
+    name: "🔒 Trivy - ${{ matrix.component }}"
+    runs-on: ubuntu-latest
+
+    needs: [docker-build, change-detection, version]
+    if: needs.change-detection.outputs.has_components == 'true'
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        component: ${{ fromJSON(needs.change-detection.outputs.components) }} 
+        
+      
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Docker image
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image-jerney_${{ matrix.component }}
+
+      - name: Load Docker image
+        run: |
+          docker load \
+            -i ${{ matrix.component }}-image.tar
+
+
+  # --------------------------------------------------------
+  # Trivy vulnerability scan
+  # --------------------------------------------------------
+
+      - name: Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ secrets.DOCKERHUB_USERNAME }}/jerney-${{ matrix.component }}:${{ needs.version.outputs.IMAGE_TAG }}
+          format: sarif
+          output: trivy-${{ matrix.component }}.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          scanners: vuln
+ #         trivyignores: .trivyignore
+          exit-code: 0
+
+
+  # --------------------------------------------------------
+  # Upload results to GitHub Security
+  # --------------------------------------------------------
+
+      - name: Upload Trivy SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-${{ matrix.component }}.sarif
+          category: trivy-${{ matrix.component }}
+      
+
+  # ============================================================
+  # PUSH TO DOCKER HUB
+  # ============================================================
+
+  docker-push:
+    name: "📦 Push ${{ matrix.component }} to Docker Hub"
+    runs-on: ubuntu-latest
+    needs: [trivy, change-detection, version]
+    if: needs.change-detection.outputs.has_components == 'true'
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        component: ${{ fromJSON(needs.change-detection.outputs.components) }}
+          
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Docker image
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image-jerney_${{ matrix.component }}
+
+      - name: Load Docker image
+        run: |
+          docker load \
+            -i ${{ matrix.component }}-image.tar
+
+      # --------------------------------------------------------
+      # Login to Docker Hub
+      # --------------------------------------------------------
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # --------------------------------------------------------
+      # Push SHA-tagged image
+      # --------------------------------------------------------
+
+      - name: Push Docker image
+        run: |
+
+          docker push \
+            ${{ secrets.DOCKERHUB_USERNAME }}/jerney-${{ matrix.component }}:${{ needs.version.outputs.IMAGE_TAG }}
+
+
+      
+# ============================================================
+  # STAGE 8: HELM / KUBERNETES VALIDATION
+  # ============================================================
+
+  helm-validation:
+    name: "⎈ Helm/Kubernetes Validation"
+    runs-on: ubuntu-latest
+
+    needs: [change-detection, version]
+
+    if: ${{ needs.change-detection.outputs.helm == 'true' }} # helm
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Helm lint
+        run: |
+          helm lint helm/Jerney
+
+      - name: Helm template test
+        run: |
+          helm template jerney helm/Jerney \
+            --set backend.image_tag=${{ needs.version.outputs.IMAGE_TAG }} \
+            --set frontend.image_tag=${{ needs.version.outputs.IMAGE_TAG }}    
+
+# ============================================================
+# GITOPS
+# Update only the image tag(s) for changed components
+# ============================================================
+
+  gitops:
+    name: "🚀 Update GitOps Manifests"
+    runs-on: ubuntu-latest
+
+    needs:
+      - docker-push
+      - helm-validation
+      - version
+      - change-detection
+
+    if: |
+      !cancelled() &&
+      github.ref == 'refs/heads/staging' &&
+      (
+        github.event_name == 'push' ||
+        (
+          github.event_name == 'workflow_dispatch' &&
+          inputs.action == 'deploy'
+        )
+      ) &&
+      (
+        needs.change-detection.outputs.has_components == 'true' ||
+        needs.change-detection.outputs.helm == 'true'
+      ) &&
+      (
+        needs.docker-push.result == 'success' ||
+        needs.docker-push.result == 'skipped'
+      ) &&
+      (
+        needs.helm-validation.result == 'success' ||
+        needs.helm-validation.result == 'skipped'
+      )
+
+    permissions:
+      contents: write
+
+    steps:
+
+      - name: Checkout staging
+        uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0
+
+      - name: Setup yq
+        uses: mikefarah/yq@v4.44.3
+
+      - name: Show current image tags
+        run: |
+          echo "===== CURRENT IMAGE TAGS ====="
+
+          echo "Backend:"
+          yq eval '.backend.image_tag' helm/Jerney/values.yaml
+
+          echo "Frontend:"
+          yq eval '.frontend.image_tag' helm/Jerney/values.yaml
+
+      - name: Update only changed component tags
+        env:
+          IMAGE_TAG: ${{ needs.version.outputs.IMAGE_TAG }}
+          FRONTEND_CHANGED: ${{ needs.change-detection.outputs.frontend }}
+          BACKEND_CHANGED: ${{ needs.change-detection.outputs.backend }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "=========================================="
+          echo "GitOps Image Update"
+          echo "=========================================="
+
+          echo "New image tag: $IMAGE_TAG"
+          echo "Frontend changed: $FRONTEND_CHANGED"
+          echo "Backend changed: $BACKEND_CHANGED"
+          echo ""
+
+          # --------------------------------------------------
+          # FRONTEND
+          # --------------------------------------------------
+
+          if [[ "$FRONTEND_CHANGED" == "true" ]]; then
+            echo "Updating FRONTEND image tag -> $IMAGE_TAG"
+
+            yq eval -i \
+              ".frontend.image_tag = \"$IMAGE_TAG\"" \
+              helm/Jerney/values.yaml
+          else
+            echo "Frontend did NOT change."
+            echo "Keeping existing frontend image tag."
+          fi
+
+          # --------------------------------------------------
+          # BACKEND
+          # --------------------------------------------------
+
+          if [[ "$BACKEND_CHANGED" == "true" ]]; then
+            echo "Updating BACKEND image tag -> $IMAGE_TAG"
+
+            yq eval -i \
+              ".backend.image_tag = \"$IMAGE_TAG\"" \
+              helm/Jerney/values.yaml
+          else
+            echo "Backend did NOT change."
+            echo "Keeping existing backend image tag."
+          fi
+
+          echo ""
+          echo "=========================================="
+          echo "FINAL IMAGE TAGS"
+          echo "=========================================="
+
+          echo "Backend:"
+          yq eval '.backend.image_tag' helm/Jerney/values.yaml
+
+          echo "Frontend:"
+          yq eval '.frontend.image_tag' helm/Jerney/values.yaml
+
+      - name: Show values.yaml diff
+        run: |
+          echo "===== VALUES.YAML DIFF ====="
+
+          git diff -- helm/Jerney/values.yaml
+
+      - name: Commit and push GitOps change
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add helm/Jerney/values.yaml
+
+          if git diff --cached --quiet; then
+            echo "No image tag changes detected."
+            echo "Nothing to commit."
+            exit 0
+          fi
+
+          git commit -m "deploy: update changed image(s) to ${{ needs.version.outputs.IMAGE_TAG }}"
+          git push origin staging
