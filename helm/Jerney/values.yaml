@@ -2,34 +2,24 @@
 #      database         #
 #########################
 namespace: jerney
-
 config:
   name: jerney-config
   DB_HOST: ""
   DB_PORT: "5432"
   DB_NAME: ""
   DB_USER: ""
-
-
-
-
-
 #########################
 #      Backend          #
 #########################
-
 backend:
   namespace: jerney
   app_name: jerney-backend
   app_part: jerney
   app_component: backend
   replicaCount: 2
-
-  containerport: 5000 
+  containerport: 5000
   image_name: chimuanyavic7/jerney-backend
-  image_tag :
-
-
+  image_tag: f28d3af
   type: ClusterIP
   service_port: 5000
   targetPort: 5000
@@ -42,12 +32,9 @@ frontend:
   app_part: jerney
   app_component: frontend
   replicaCount: 2
-
-  containerport: 8080 
+  containerport: 8080
   image_name: chimuanyavic7/jerney-frontend
-  image_tag :
-
-
+  image_tag: f28d3af
   type: ClusterIP
   service_port: 80
   targetPort: 8080
