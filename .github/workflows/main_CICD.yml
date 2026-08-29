@@ -9,9 +9,9 @@ name: Jerney DevSecOps Pipeline
 
 on:
   push:
-    branches: [staging]
+    branches: [main]
   pull_request:
-    branches: ["*"]
+    branches: [staging]
 
 
   workflow_dispatch:
