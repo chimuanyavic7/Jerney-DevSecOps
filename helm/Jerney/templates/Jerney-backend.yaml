@@ -47,25 +47,25 @@ spec:
           env:
             - name: PORT
               value: "5000"
+
             - name: DB_HOST
               value: "jerney-db"
+
             - name: DB_PORT
               value: "5432"
-            - name: DB_USER
+              
+            - name: DB_NAME
               valueFrom:
                 secretKeyRef:
                   name: jerney-db-secret
-                  key: POSTGRES_USER
+                  key: POSTGRES_NAME
+
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: jerney-db-secret
                   key: POSTGRES_PASSWORD
-            - name: DB_NAME
-              valueFrom:
-                secretKeyRef:
-                  name: jerney-db-secret
-                  key: POSTGRES_DB
+            
           resources:
             requests:
               cpu: "100m"
