@@ -54,17 +54,17 @@ spec:
             - name: DB_PORT
               value: "5432"
               
-            - name: DB_NAME
+            - name: DB_USERNAME
               valueFrom:
                 secretKeyRef:
                   name: jerney-db-secret
-                  key: POSTGRES_NAME
+                  key: DB_USERNAME
 
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: jerney-db-secret
-                  key: POSTGRES_PASSWORD
+                  key: DB_PASSWORD
             
           resources:
             requests:
