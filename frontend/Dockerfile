@@ -18,7 +18,7 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 # Copy built frontend from build stage
 COPY --from=build /app/dist /usr/share/nginx/html
 
-# Security: run nginx as non-root    -check
+# Security: run nginx as non-root    
 RUN chown -R nginx:nginx /usr/share/nginx/html && \
     chown -R nginx:nginx /var/cache/nginx && \
     chown -R nginx:nginx /var/log/nginx && \
@@ -30,3 +30,4 @@ USER nginx
 EXPOSE 8080
 
 CMD ["nginx", "-g", "daemon off;"]
+#hm
