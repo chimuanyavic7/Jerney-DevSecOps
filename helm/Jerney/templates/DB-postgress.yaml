@@ -34,9 +34,22 @@ spec:
           ports:
             - containerPort: 5432
               protocol: TCP
-          envFrom:
-            - secretRef:
-                name: jerney-db-secret
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: jerney-db-secret
+                  key: DB_USERNAME
+
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: jerney-db-secret
+                  key: DB_PASSWORD
+
+            - name: POSTGRES_DB
+              value: jerney_db
+
           volumeMounts:
             - name: db-storage
               mountPath: /var/lib/postgresql/data
