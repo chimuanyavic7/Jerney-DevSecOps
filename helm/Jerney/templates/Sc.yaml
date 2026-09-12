@@ -4,7 +4,7 @@ metadata:
   name: aws-ebs
 provisioner: ebs.csi.aws.com
 parameters:
-  type: gp2
+  type: gp3
   encrypted: "true"
 volumeBindingMode: WaitForFirstConsumer    # Use "WaitForFirstConsumer" if using dynamic provisioning  Immediate
 reclaimPolicy: Delete
