@@ -50,11 +50,14 @@ spec:
 
             - name: DB_HOST
               value: "jerney-db"
-
+            
             - name: DB_PORT
               value: "5432"
               
-            - name: DB_USERNAME
+            - name: DB_USER
+              value: "jerney-postgres-database"
+              
+            - name: DB_NAME
               valueFrom:
                 secretKeyRef:
                   name: jerney-db-secret

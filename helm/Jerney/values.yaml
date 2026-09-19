@@ -11,15 +11,17 @@ config:
   DB_USER: ""
 
 
-
+#########################
+#      Ingress          #
+#########################
+ingress_alb:
+  host: vanya7.work.gd
 
 
 #########################
 #      Backend          #
 #########################
-
 backend:
-  namespace: jerney
   app_name: jerney-backend
   app_part: jerney
   app_component: backend
@@ -33,11 +35,12 @@ backend:
   type: ClusterIP
   service_port: 5000
   targetPort: 5000
+
+  
 #########################
 #      frontend          #
 #########################
 frontend:
-  namespace: jerney
   app_name: jerney-frontend
   app_part: jerney
   app_component: frontend
