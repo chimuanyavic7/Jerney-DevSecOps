@@ -271,10 +271,10 @@ kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.pas
     
 
 ### **Install AWS Load Balancer Controller:**
-
+- Edit Cluster-name and region
 ```
-    export CLUSTER_NAME=<"CLUSTER-NAME">
-    export AWS_REGION=<"REGION-NAME">
+    export CLUSTER_NAME="CLUSTER-NAME"
+    export AWS_REGION="REGION-NAME"
     export AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
     
 ```
