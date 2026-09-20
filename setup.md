@@ -168,21 +168,199 @@ helm install aws-ebs-csi-driver/aws-ebs-csi-driver \
     helm install vault hashicorp/vault --set "server.dev.enabled=true"
        
   ```
+  
+  ```
+    helm repo add external-secrets https://charts.external-secrets.io
+    helm repo update
+    helm install external-secrets external-secrets/external-secrets --namespace external-secrets --create-namespace --set installCRDs=true   
+  ```
 
-- **Install ArgoCD**
-    - we are adding this because so that routing is done to apppropitate service
+  - Install EBS CSI driver
+  
+  ```
+    aws iam attach-role-policy \
+        --role-name <NodeInstanceRoleName> \
+        --policy-arn arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy
+       
+  ```
+
+  ```
+    kubectl apply -k "github.com/kubernetes-sigs/aws-ebs-csi-driver/deploy/kubernetes/overlays/stable/?ref=release-1.44"
+       
+  ```
+
+  - Create a secret for vault-token
+  ```
+    kubectl create secret generic vault-token \
+        --namespace default \
+        --from-literal=token=root
+       
+  ```
+- change vault to Loadbalaner: password is root 
+```bash
+kubectl patch svc vault -n default -p '{"spec": {"type": "LoadBalancer"}}'
+````
+
+
+---
+## **Install ArgoCD**
+
+
+- we are adding this because so that routing is done to apppropitate service
 ```bash
 kubectl create namespace argocd
 kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 ````
+
 - change AgroCD to Loadbalaner
 ```bash
 kubectl patch svc argocd-server -n argocd -p '{"spec": {"type": "LoadBalancer"}}'
 ````
+
 - To AgroCD secret password  
 ```bash
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d; echo'
 ````
+
+
+---
+ ## **Monitoring with Prometheus and Grafana**
+  
+  - Install kube-prometheus-stack
+  ```
+    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+    helm repo update
+       
+  ```
+  
+  - Install kube-prometheus-stack
+  ```
+    kubectl create ns monitoring
+    helm install monitoring prometheus-community/kube-prometheus-stack -n monitoring 
+       
+  ```
+
+  - Prometheus UI:
+  ```
+     kubectl port-forward service/prometheus-operated -n monitoring 9090:9090
+       
+  ```
+
+  - Grafana UI: 
+  ```
+     kubectl port-forward service/monitoring-grafana -n monitoring 8080:80
+       
+  ```
+  - Fetch the Grafana password Grafana: 
+  ```
+     kubectl get secret
+
+     kubectl get secret --namespace default monitoring-grafana -o jsonpath="{.data.admin-password}" | base64 --decode; echo
+    
+  ```
+  **NOTE:** If you are using an EC2 Instance or Cloud VM, you need to pass --address 0.0.0.0 to the above command. Then you can access the UI on instance-ip:port
+
+    - Open ports of Bastion Host port: 9090and 8080
+    - Access Prometheus <BastionHostIP>:9090 
+    - Access Grafana <BastionHostIP>:8080
+    - Or change to LoadBalancer
+
+ ### **Dashboard for Kubernetes monitoring:**
+    - 15760
+    - 1860
+    
+
+### **Install AWS Load Balancer Controller:**
+
+```
+    export CLUSTER_NAME=<"CLUSTER-NAME">
+    export AWS_REGION=<"REGION-NAME">
+    export AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+    
+```
+
+```
+# 1. Ensure the cluster has an IAM OIDC provider
+eksctl utils associate-iam-oidc-provider \
+  --cluster "$CLUSTER_NAME" \
+  --region "$AWS_REGION" \
+  --approve
+
+# 2. Download the official IAM policy
+curl -Lo iam_policy.json \
+  https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.14.1/docs/install/iam_policy.json
+
+# 3. Create the IAM policy
+aws iam create-policy \
+  --policy-name AWSLoadBalancerControllerIAMPolicy \
+  --policy-document file://iam_policy.json
+
+# 4. Create the dedicated IAM role + Kubernetes ServiceAccount
+eksctl create iamserviceaccount \
+  --cluster "$CLUSTER_NAME" \
+  --region "$AWS_REGION" \
+  --namespace kube-system \
+  --name aws-load-balancer-controller \
+  --role-name AmazonEKSLoadBalancerControllerRole \
+  --attach-policy-arn \
+    "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/AWSLoadBalancerControllerIAMPolicy" \
+  --approve \
+  --override-existing-serviceaccounts
+
+# 5. Add the official AWS EKS Helm repository
+helm repo add eks https://aws.github.io/eks-charts
+helm repo update
+
+# 6. Get the VPC ID
+export VPC_ID="$(aws eks describe-cluster \
+  --name "$CLUSTER_NAME" \
+  --region "$AWS_REGION" \
+  --query 'cluster.resourcesVpcConfig.vpcId' \
+  --output text)"
+
+# 7. Install a pinned controller version
+helm upgrade --install aws-load-balancer-controller \
+  eks/aws-load-balancer-controller \
+  --namespace kube-system \
+  --version 1.14.0 \
+  --set clusterName="$CLUSTER_NAME" \
+  --set region="$AWS_REGION" \
+  --set vpcId="$VPC_ID" \
+  --set serviceAccount.create=false \
+  --set serviceAccount.name=aws-load-balancer-controller \
+  --wait \
+  --timeout 10m
+       
+  ```
+
+
+- **Another meethod for Install AWS Load Balancer Controller but i prefer the first method**
+
+- Create IAM Policy:
+```
+    curl -O https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.13.3/docs/install/iam_policy.json
+    
+```
+ 
+```
+  aws iam create-policy \
+     --policy-name AWSLoadBalancerControllerIAMPolicy \
+     --policy-document file://iam_policy.json
+    
+```
+
+- Create an IAM-Backed Kubernetes Service Account
+```
+  eksctl create iamserviceaccount \
+    --cluster=wanderblog-eks-cluster \
+    --namespace=kube-system \
+    --name=aws-load-balancer-controller \
+    --attach-policy-arn=arn:aws:iam::<Account-id>:policy/AWSLoadBalancerControllerIAMPolicy \
+    --override-existing-serviceaccounts \
+    --region ap-south-1 \
+    --approve
+    
+```
 
 - **Get External IP of NGINX Ingress**
 
